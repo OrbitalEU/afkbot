@@ -191,4 +191,58 @@ async def check_inactive():
     guild=discord.Object(id=GUILD_ID)
 )
 @app_commands.describe(all_time="Alle Zeit anzeigen (statt nur diesen Monat)")
-async
+async def leaderboard_cmd(interaction: discord.Interaction, all_time: bool = False):
+    await interaction.response.defer()
+    month = None if all_time else month_key(datetime.now(TIMEZONE))
+    data = get_top_afk(month=month, limit=10)
+    if not data:
+        await interaction.followup.send("Noch keine AFK-Daten vorhanden.")
+        return
+
+    embed = discord.Embed(
+        title="🔥 Die größten AFK-Hunde" + (" (All Time)" if all_time else " (Dieser Monat)"),
+        color=0xFF6600
+    )
+    for rank, (user_id, seconds) in enumerate(data, 1):
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        user = await bot.fetch_user(user_id)
+        embed.add_field(
+            name=f"{rank}. {user.name}",
+            value=f"{hours}h {minutes}min",
+            inline=False
+        )
+    await interaction.followup.send(embed=embed)
+
+
+@tree.command(
+    name="afkstats",
+    description="Deine persönliche AFK-Statistik",
+    guild=discord.Object(id=GUILD_ID)
+)
+async def mystats(interaction: discord.Interaction):
+    await interaction.response.defer()
+    user_id = interaction.user.id
+    current_month = month_key(datetime.now(TIMEZONE))
+    with db() as con:
+        cur = con.cursor()
+        cur.execute("SELECT seconds FROM monthly_totals WHERE month=? AND user_id=?",
+                   (current_month, user_id))
+        row = cur.fetchone()
+        total_this_month = row[0] if row else 0
+        cur.execute("SELECT SUM(seconds) FROM monthly_totals WHERE user_id=?", (user_id,))
+        total_all = cur.fetchone()[0] or 0
+
+    h1 = total_this_month // 3600
+    m1 = (total_this_month % 3600) // 60
+    h2 = total_all // 3600
+    m2 = (total_all % 3600) // 60
+
+    embed = discord.Embed(title=f"📊 AFK-Stats von {interaction.user.name}", color=0x00ff88)
+    embed.add_field(name="Dieser Monat", value=f"**{h1} Std {m1} Min**", inline=False)
+    embed.add_field(name="Insgesamt", value=f"**{h2} Std {m2} Min**", inline=False)
+    await interaction.followup.send(embed=embed)
+
+
+# ======================= START BOT =======================
+bot.run(TOKEN)
